@@ -23,6 +23,7 @@
 
 #include <X11/Xlib.h>
 #include <X11/extensions/Xinerama.h>
+#include <X11/extensions/Xrandr.h>
 #include <ioncore/common.h>
 #include <ioncore/global.h>
 #include <ioncore/mplex.h>
@@ -39,6 +40,36 @@ char mod_xinerama_ion_api_version[]=ION_API_VERSION;
 static int xinerama_event_base;
 static int xinerama_error_base;
 
+bool mod_xinerama_add_workspace(int x, int y, int width, int height, int cnt)
+{
+    WRootWin* rootWin = ioncore_g.rootwins;
+    WFitParams fp;
+    WMPlexAttachParams par = MPLEXATTACHPARAMS_INIT;
+
+    WScreen* newScreen;
+    WRegion* reg=NULL;
+
+    fp.g.x = x;
+    fp.g.y = y;
+    fp.g.w = width;
+    fp.g.h = height;
+    fp.mode = REGION_FIT_EXACT;
+
+    par.flags = MPLEX_ATTACH_GEOM|MPLEX_ATTACH_SIZEPOLICY|MPLEX_ATTACH_UNNUMBERED ;
+    par.geom = fp.g;
+    par.szplcy = SIZEPOLICY_FULL_EXACT;
+
+    newScreen = (WScreen*) mplex_do_attach_new(&rootWin->scr.mplex, &par,
+                                               (WRegionCreateFn*)create_screen, NULL);
+
+    if(newScreen == NULL) return FALSE;
+
+    // FIXME, maybe name it after the output for Xrandr
+    newScreen->id = cnt;
+    return TRUE;
+}
+
+
 bool mod_xinerama_init()
 {
     WRootWin* rootWin = ioncore_g.rootwins;
@@ -49,8 +80,38 @@ bool mod_xinerama_init()
 
     int nRects;
     int i;
+    int major, minor;
 
-    if(XineramaQueryExtension(dpy,&xinerama_event_base, &xinerama_error_base))
+    if (XRRQueryVersion(dpy, &major, &minor))
+    {
+#ifdef MOD_XINERAMA_DEBUG
+        printf("Using mod_xrandr in version %i.%i", major, minor);
+#endif
+        XRRScreenResources *res = XRRGetScreenResourcesCurrent (dpy, DefaultRootWindow(dpy));
+
+        for(i = 0 ; i < res->ncrtc ; ++i){
+            XRRCrtcInfo *info = XRRGetCrtcInfo(dpy, res, res->crtcs[i]);
+#ifdef MOD_XINERAMA_DEBUG
+            printf("Screen %d:\tx=%d\ty=%d\twidth=%u\theight=%u\n",
+                   i+1, info->x, info->y, info->width, info->height);
+#endif
+
+            if (!mod_xinerama_add_workspace(info->x, info->y,
+                                            info->width, info->height,
+                                            i))
+            {
+                warn(TR("Unable to create Xrandr workspace %d."), i);
+                XRRFreeCrtcInfo(info);
+                XRRFreeScreenResources(res);
+                return FALSE;
+            }
+            XRRFreeCrtcInfo(info);
+        }
+
+        XRRFreeScreenResources(res);
+        rootWin->scr.id = -2;
+    }
+    else if(XineramaQueryExtension(dpy,&xinerama_event_base, &xinerama_error_base))
     {
         XineramaScreenInfo* sInfo;
         sInfo = XineramaQueryScreens(dpy, &nRects);
@@ -63,37 +124,19 @@ bool mod_xinerama_init()
 
         for(i = 0 ; i < nRects ; ++i)
         {
-            WFitParams fp;
-            WMPlexAttachParams par = MPLEXATTACHPARAMS_INIT;
-
-            WScreen* newScreen;
-            WRegion* reg=NULL;
 #ifdef MOD_XINERAMA_DEBUG
             printf("Rectangle #%d: x=%d y=%d width=%u height=%u\n",
                    i+1, sInfo[i].x_org, sInfo[i].y_org, sInfo[i].width,
                    sInfo[i].height);
 #endif
-            fp.g.x = sInfo[i].x_org;
-            fp.g.y = sInfo[i].y_org;
-            fp.g.w = sInfo[i].width;
-            fp.g.h = sInfo[i].height;
-            fp.mode = REGION_FIT_EXACT;
-
-            par.flags = MPLEX_ATTACH_GEOM|MPLEX_ATTACH_SIZEPOLICY|MPLEX_ATTACH_UNNUMBERED ;
-            par.geom = fp.g;
-            par.szplcy = SIZEPOLICY_FULL_EXACT;
-
-            newScreen = (WScreen*) mplex_do_attach_new(&rootWin->scr.mplex, &par,
-                (WRegionCreateFn*)create_screen, NULL);
-
-            if(newScreen == NULL) {
+            if (!mod_xinerama_add_workspace(sInfo[i].x_org, sInfo[i].y_org,
+                                            sInfo[i].width, sInfo[i].height,
+                                            i))
+            {
                 warn(TR("Unable to create Xinerama workspace %d."), i);
                 XFree(sInfo);
                 return FALSE;
-                }
-
-            newScreen->id = i ;
-
+            }
         }
 
         XFree(sInfo);
