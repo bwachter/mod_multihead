@@ -11,7 +11,7 @@ include $(TOPDIR)/build/system-inc.mk
 
 INCLUDES += $(LIBTU_INCLUDES) $(LIBEXTL_INCLUDES) $(X11_INCLUDES) -I$(TOPDIR)
 CFLAGS += $(XOPEN_SOURCE) $(C99_SOURCE)
-LDFLAGS += -Wl,--no-as-needed,-lXext,-lXinerama
+LDFLAGS += -Wl,--no-as-needed,-lXext,-lXinerama,-lXrandr
 
 SOURCES=mod_xinerama.c
 
@@ -26,9 +26,9 @@ include $(TOPDIR)/build/rules.mk
 ######################################
 
 _install: module_install
-	$(INSTALLDIR) $(ETCDIR)
+	$(INSTALLDIR) $(INSTALL_ROOT)$(ETCDIR)
 	for i in $(ETC); do \
-		$(INSTALL) -m $(DATA_MODE) $$i $(ETCDIR); \
+		$(INSTALL) -m $(DATA_MODE) $$i $(INSTALL_ROOT)$(ETCDIR); \
 	done
 
 ######################################
