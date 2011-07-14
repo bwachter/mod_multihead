@@ -1,8 +1,10 @@
 /*
- * Ion xinerama module
- * based on mod_xrandr by Ragnar Rova and Tuomo Valkonen
+ * Multihead support for ion3 using xrandr and xinerama
  *
- * by Thomas Themel <themel0r@wannabehacker.com>
+ * by Bernd Wachter <bwachter@lart.info>
+ *
+ * based on mod_xinerama by Thomas Themel <themel0r@wannabehacker.com>
+ * based on mod_xrandr by Ragnar Rova and Tuomo Valkonen
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -31,16 +33,16 @@
 #include <ioncore/sizepolicy.h>
 #include <ioncore/../version.h>
 
-#ifdef MOD_XINERAMA_DEBUG
+#ifdef MOD_MULTIHEAD_DEBUG
 #include <stdio.h>
 #endif
 
-char mod_xinerama_ion_api_version[]=ION_API_VERSION;
+char mod_multihead_ion_api_version[]=ION_API_VERSION;
 
 static int xinerama_event_base;
 static int xinerama_error_base;
 
-bool mod_xinerama_add_workspace(int x, int y, int width, int height, int cnt)
+bool mod_multihead_add_workspace(int x, int y, int width, int height, int cnt)
 {
     WRootWin* rootWin = ioncore_g.rootwins;
     WFitParams fp;
@@ -70,7 +72,7 @@ bool mod_xinerama_add_workspace(int x, int y, int width, int height, int cnt)
 }
 
 
-bool mod_xinerama_init()
+bool mod_multihead_init()
 {
     WRootWin* rootWin = ioncore_g.rootwins;
     Display* dpy = ioncore_g.dpy;
@@ -84,19 +86,19 @@ bool mod_xinerama_init()
 
     if (XRRQueryVersion(dpy, &major, &minor))
     {
-#ifdef MOD_XINERAMA_DEBUG
-        printf("Using mod_xrandr in version %i.%i", major, minor);
+#ifdef MOD_MULTIHEAD_DEBUG
+        printf("Using Xrandr API in version %i.%i", major, minor);
 #endif
         XRRScreenResources *res = XRRGetScreenResourcesCurrent (dpy, DefaultRootWindow(dpy));
 
         for(i = 0 ; i < res->ncrtc ; ++i){
             XRRCrtcInfo *info = XRRGetCrtcInfo(dpy, res, res->crtcs[i]);
-#ifdef MOD_XINERAMA_DEBUG
+#ifdef MOD_MULTIHEAD_DEBUG
             printf("Screen %d:\tx=%d\ty=%d\twidth=%u\theight=%u\n",
                    i+1, info->x, info->y, info->width, info->height);
 #endif
 
-            if (!mod_xinerama_add_workspace(info->x, info->y,
+            if (!mod_multihead_add_workspace(info->x, info->y,
                                             info->width, info->height,
                                             i))
             {
@@ -124,12 +126,12 @@ bool mod_xinerama_init()
 
         for(i = 0 ; i < nRects ; ++i)
         {
-#ifdef MOD_XINERAMA_DEBUG
+#ifdef MOD_MULTIHEAD_DEBUG
             printf("Rectangle #%d: x=%d y=%d width=%u height=%u\n",
                    i+1, sInfo[i].x_org, sInfo[i].y_org, sInfo[i].width,
                    sInfo[i].height);
 #endif
-            if (!mod_xinerama_add_workspace(sInfo[i].x_org, sInfo[i].y_org,
+            if (!mod_multihead_add_workspace(sInfo[i].x_org, sInfo[i].y_org,
                                             sInfo[i].width, sInfo[i].height,
                                             i))
             {
@@ -143,13 +145,13 @@ bool mod_xinerama_init()
         rootWin->scr.id = -2;
     }
     else
-        warn(TR("No Xinerama support detected, mod_xinerama won't do anything."));
+        warn(TR("No Xinerama or Xrandr support detected, mod_multihead won't do anything."));
 
     return TRUE;
 }
 
 
-bool mod_xinerama_deinit()
+bool mod_multihead_deinit()
 {
     return TRUE;
 }

@@ -13,11 +13,11 @@ INCLUDES += $(LIBTU_INCLUDES) $(LIBEXTL_INCLUDES) $(X11_INCLUDES) -I$(TOPDIR)
 CFLAGS += $(XOPEN_SOURCE) $(C99_SOURCE)
 LDFLAGS += -Wl,--no-as-needed,-lXext,-lXinerama,-lXrandr
 
-SOURCES=mod_xinerama.c
+SOURCES=mod_multihead.c
 
-MAKE_EXPORTS=xinerama_module
-LIBS = $(X11_LIBS) -lXinerama
-MODULE=mod_xinerama
+MAKE_EXPORTS=multihead_module
+LIBS = $(X11_LIBS) -lXinerama -lXrandr
+MODULE=mod_multihead
 
 ######################################
 
