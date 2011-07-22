@@ -24,9 +24,18 @@
 
 
 #include <X11/Xlib.h>
+
+#ifdef HAVE_XINERAMA
 #include <X11/extensions/Xinerama.h>
+#endif
+
+#ifdef HAVE_XRANDR
 #include <X11/extensions/Xrandr.h>
+#endif
+
 #include <ioncore/common.h>
+#include <ioncore/eventh.h>
+#include <ioncore/event.h>
 #include <ioncore/global.h>
 #include <ioncore/mplex.h>
 #include <ioncore/group-ws.h>
@@ -37,10 +46,18 @@
 #include <stdio.h>
 #endif
 
+#if (!defined HAVE_XRANDR) && (!defined HAVE_XINERAMA)
+#error "Neither HAVE_XRANDR nor HAVE_XINERAMA is defined"
+#endif
+
 char mod_multihead_ion_api_version[]=ION_API_VERSION;
 
-static int xinerama_event_base;
-static int xinerama_error_base;
+static int event_base;
+static int error_base;
+
+#ifdef HAVE_XRANDR
+static bool hasXrandr=FALSE;
+#endif
 
 bool mod_multihead_add_workspace(int x, int y, int width, int height, int cnt)
 {
@@ -49,7 +66,11 @@ bool mod_multihead_add_workspace(int x, int y, int width, int height, int cnt)
     WMPlexAttachParams par = MPLEXATTACHPARAMS_INIT;
 
     WScreen* newScreen;
-    WRegion* reg=NULL;
+
+#ifdef MOD_MULTIHEAD_DEBUG
+    printf("Screen %d:\tx=%d\ty=%d\twidth=%u\theight=%u\n",
+           cnt+1, x, y, width, height);
+#endif
 
     fp.g.x = x;
     fp.g.y = y;
@@ -66,42 +87,57 @@ bool mod_multihead_add_workspace(int x, int y, int width, int height, int cnt)
 
     if(newScreen == NULL) return FALSE;
 
-    // FIXME, maybe name it after the output for Xrandr
+    /* FIXME, maybe name it after the output for Xrandr */
     newScreen->id = cnt;
     return TRUE;
 }
 
+#ifdef HAVE_XRANDR
+bool mod_multihead_handle_xrandr_event(XEvent *ev){
+    if (hasXrandr && ev->type == event_base + RRScreenChangeNotify){
+
+        return TRUE;
+    }
+    return FALSE;
+}
+#endif
 
 bool mod_multihead_init()
 {
     WRootWin* rootWin = ioncore_g.rootwins;
     Display* dpy = ioncore_g.dpy;
-    int scrNum,nScreens;
-    XineramaScreenInfo* sInfo;
-    WScreen* new;
-
-    int nRects;
     int i;
-    int major, minor;
 
-    if (XRRQueryVersion(dpy, &major, &minor))
-    {
+#ifdef HAVE_XRANDR
+    if (XRRQueryExtension(dpy, &event_base, &error_base)){
+        XRRScreenResources *res;
+        int offline;
 #ifdef MOD_MULTIHEAD_DEBUG
+        int major, minor;
+        XRRQueryVersion(dpy, &major, &minor);
         printf("Using Xrandr API in version %i.%i", major, minor);
 #endif
-        XRRScreenResources *res = XRRGetScreenResourcesCurrent (dpy, DefaultRootWindow(dpy));
+
+        offline=0;
+        hasXrandr=TRUE;
+
+        res = XRRGetScreenResourcesCurrent (dpy, DefaultRootWindow(dpy));
 
         for(i = 0 ; i < res->ncrtc ; ++i){
             XRRCrtcInfo *info = XRRGetCrtcInfo(dpy, res, res->crtcs[i]);
-#ifdef MOD_MULTIHEAD_DEBUG
-            printf("Screen %d:\tx=%d\ty=%d\twidth=%u\theight=%u\n",
-                   i+1, info->x, info->y, info->width, info->height);
-#endif
+
+            /* ignore disabled CRTCs, and make sure we still have sequential */
+            /* screen numbers */
+            /* FIXME: do some magic for disabling used screens to get */
+            /* intuitiv results */
+            if (info->x==0 && info->y==0 && info->width==0 && info->height==0){
+                offline++;
+                continue;
+            }
 
             if (!mod_multihead_add_workspace(info->x, info->y,
-                                            info->width, info->height,
-                                            i))
-            {
+                                             info->width, info->height,
+                                             i-offline)){
                 warn(TR("Unable to create Xrandr workspace %d."), i);
                 XRRFreeCrtcInfo(info);
                 XRRFreeScreenResources(res);
@@ -113,45 +149,60 @@ bool mod_multihead_init()
         XRRFreeScreenResources(res);
         rootWin->scr.id = -2;
     }
-    else if(XineramaQueryExtension(dpy,&xinerama_event_base, &xinerama_error_base))
-    {
-        XineramaScreenInfo* sInfo;
-        sInfo = XineramaQueryScreens(dpy, &nRects);
-
-        if(!sInfo)
-        {
-            warn(TR("Could not retrieve Xinerama screen info, sorry."));
-            return FALSE ;
-        }
-
-        for(i = 0 ; i < nRects ; ++i)
-        {
-#ifdef MOD_MULTIHEAD_DEBUG
-            printf("Rectangle #%d: x=%d y=%d width=%u height=%u\n",
-                   i+1, sInfo[i].x_org, sInfo[i].y_org, sInfo[i].width,
-                   sInfo[i].height);
 #endif
-            if (!mod_multihead_add_workspace(sInfo[i].x_org, sInfo[i].y_org,
-                                            sInfo[i].width, sInfo[i].height,
-                                            i))
-            {
-                warn(TR("Unable to create Xinerama workspace %d."), i);
-                XFree(sInfo);
-                return FALSE;
-            }
-        }
-
-        XFree(sInfo);
-        rootWin->scr.id = -2;
-    }
+#if (defined HAVE_XRANDR) && (defined HAVE_XINERAMA)
     else
-        warn(TR("No Xinerama or Xrandr support detected, mod_multihead won't do anything."));
+#endif
+#ifdef HAVE_XINERAMA
+        if(XineramaQueryExtension(dpy,&event_base, &error_base)){
+            XineramaScreenInfo* sInfo;
+            int nRects;
+
+            sInfo = XineramaQueryScreens(dpy, &nRects);
+
+            if(!sInfo){
+                warn(TR("Could not retrieve Xinerama screen info, sorry."));
+                return FALSE ;
+            }
+
+            for(i = 0 ; i < nRects ; ++i){
+                if (!mod_multihead_add_workspace(sInfo[i].x_org, sInfo[i].y_org,
+                                                 sInfo[i].width, sInfo[i].height,
+                                                 i)){
+                    warn(TR("Unable to create Xinerama workspace %d."), i);
+                    XFree(sInfo);
+                    return FALSE;
+                }
+            }
+
+            XFree(sInfo);
+            rootWin->scr.id = -2;
+        }
+#endif
+#if (defined HAVE_XRANDR) || (defined HAVE_XINERAMA)
+        else
+#endif
+            warn(TR("No Xinerama or Xrandr support detected, mod_multihead won't do anything."));
+
+
+#ifdef HAVE_XRANDR
+    if (hasXrandr)
+        XRRSelectInput(dpy, rootWin->dummy_win, RRScreenChangeNotifyMask);
+    else
+        warn_obj("mod_xrandr","XRandR is not supported on this display");
+
+    hook_add(ioncore_handle_event_alt,(WHookDummy *)mod_multihead_handle_xrandr_event);
+#endif
 
     return TRUE;
 }
 
 
-bool mod_multihead_deinit()
-{
+bool mod_multihead_deinit(){
+#ifdef HAVE_XRANDR
+    hook_remove(ioncore_handle_event_alt,
+                (WHookDummy *)mod_multihead_handle_xrandr_event);
+#endif
+
     return TRUE;
 }

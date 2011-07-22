@@ -10,7 +10,10 @@ include $(TOPDIR)/build/system-inc.mk
 ######################################
 
 INCLUDES += $(LIBTU_INCLUDES) $(LIBEXTL_INCLUDES) $(X11_INCLUDES) -I$(TOPDIR)
-CFLAGS += $(XOPEN_SOURCE) $(C99_SOURCE)
+CFLAGS += $(XOPEN_SOURCE) $(C99_SOURCE) -Wall
+CFLAGS += -DHAVE_XRANDR
+CFLAGS += -DHAVE_XINERAMA
+#CFLAGS += -DMOD_MULTIHEAD_DEBUG
 LDFLAGS += -Wl,--no-as-needed,-lXext,-lXinerama,-lXrandr
 
 SOURCES=mod_multihead.c
