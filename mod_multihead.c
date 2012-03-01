@@ -186,12 +186,10 @@ bool mod_multihead_init()
 
 
 #ifdef HAVE_XRANDR
-    if (hasXrandr)
+    if (hasXrandr){
         XRRSelectInput(dpy, rootWin->dummy_win, RRScreenChangeNotifyMask);
-    else
-        warn_obj("mod_xrandr","XRandR is not supported on this display");
-
-    hook_add(ioncore_handle_event_alt,(WHookDummy *)mod_multihead_handle_xrandr_event);
+        hook_add(ioncore_handle_event_alt,(WHookDummy *)mod_multihead_handle_xrandr_event);
+    }
 #endif
 
     return TRUE;
